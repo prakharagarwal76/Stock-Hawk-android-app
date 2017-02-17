@@ -1,24 +1,31 @@
 package com.sam_chordas.android.stockhawk.ui;
 
 import android.app.LoaderManager;
+import android.appwidget.AppWidgetManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.CursorLoader;
 import android.content.Intent;
 import android.content.Loader;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.preference.PreferenceManager;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.app.ActionBar;
 import android.os.Bundle;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
+import android.support.v7.widget.Toolbar;
 import android.support.v7.widget.helper.ItemTouchHelper;
 import android.text.InputType;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.TextView;
 import android.widget.Toast;
 import com.afollestad.materialdialogs.MaterialDialog;
 import com.sam_chordas.android.stockhawk.R;
@@ -34,6 +41,7 @@ import com.google.android.gms.gcm.PeriodicTask;
 import com.google.android.gms.gcm.Task;
 import com.melnykov.fab.FloatingActionButton;
 import com.sam_chordas.android.stockhawk.touch_helper.SimpleItemTouchHelperCallback;
+import com.sam_chordas.android.stockhawk.widget.StockWidgetProvider;
 
 public class MyStocksActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor>{
 
@@ -52,8 +60,15 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
   private Context mContext;
   private Cursor mCursor;
   boolean isConnected;
+    TextView emptyText;
+    RecyclerView recyclerView;
 
-  @Override
+    int symbolColumnIndex,nameColoumIndex,currencyColoumIndex,lasttradedateColoumIndex,
+            daylowColoumIndex,dayhighColoumIndex,yearlowColoumIndex,yearhighColoumIndex,
+            earningsshareColoumIndex,marketcaptalizationColoumIndex;
+
+
+    @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     mContext = this;
@@ -76,20 +91,44 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
         networkToast();
       }
     }
-    RecyclerView recyclerView = (RecyclerView) findViewById(R.id.recycler_view);
+
+      emptyText=(TextView) findViewById(R.id.emptyView_acitivity_my_stocks);
+    recyclerView = (RecyclerView) findViewById(R.id.recycler_view);
     recyclerView.setLayoutManager(new LinearLayoutManager(this));
     getLoaderManager().initLoader(CURSOR_LOADER_ID, null, this);
+
 
     mCursorAdapter = new QuoteCursorAdapter(this, null);
     recyclerView.addOnItemTouchListener(new RecyclerViewItemClickListener(this,
             new RecyclerViewItemClickListener.OnItemClickListener() {
               @Override public void onItemClick(View v, int position) {
-                //TODO:
-                // do something on item click
+                  //TODO:
+                  // do something on item click
+                  if (mCursor.moveToPosition(position)) {
+                      Intent intent = new Intent(mContext, StockDetailActivity.class);
+                      intent.putExtra("symbol_name", mCursor.getString(symbolColumnIndex));
+                      intent.putExtra("name", mCursor.getString(nameColoumIndex));
+                      intent.putExtra("currency", mCursor.getString(currencyColoumIndex));
+                      intent.putExtra("lasttradedate", mCursor.getString(lasttradedateColoumIndex));
+                      intent.putExtra("daylow", mCursor.getString(daylowColoumIndex));
+                      intent.putExtra("dayhigh", mCursor.getString(dayhighColoumIndex));
+                      intent.putExtra("yearlow", mCursor.getString(yearlowColoumIndex));
+                      intent.putExtra("yearhigh", mCursor.getString(yearhighColoumIndex));
+                      intent.putExtra("earningsshare", mCursor.getString(earningsshareColoumIndex));
+                      intent.putExtra("marketcaptalization", mCursor.getString(marketcaptalizationColoumIndex));
+                      startActivity(intent);
+                  }
+
+
               }
+
             }));
     recyclerView.setAdapter(mCursorAdapter);
+    emptyViewBehavior();
 
+        ItemTouchHelper.Callback callback = new SimpleItemTouchHelperCallback(mCursorAdapter);
+        mItemTouchHelper = new ItemTouchHelper(callback);
+        mItemTouchHelper.attachToRecyclerView(recyclerView);
 
     FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
     fab.attachToRecyclerView(recyclerView);
@@ -106,9 +145,9 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
                   Cursor c = getContentResolver().query(QuoteProvider.Quotes.CONTENT_URI,
                       new String[] { QuoteColumns.SYMBOL }, QuoteColumns.SYMBOL + "= ?",
                       new String[] { input.toString() }, null);
-                  if (c.getCount() != 0) {
+                  if (c != null && c.getCount() != 0) {
                     Toast toast =
-                        Toast.makeText(MyStocksActivity.this, "This stock is already saved!",
+                        Toast.makeText(MyStocksActivity.this, R.string.stock_added,
                             Toast.LENGTH_LONG);
                     toast.setGravity(Gravity.CENTER, Gravity.CENTER, 0);
                     toast.show();
@@ -118,6 +157,7 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
                     mServiceIntent.putExtra("tag", "add");
                     mServiceIntent.putExtra("symbol", input.toString());
                     startService(mServiceIntent);
+                      updateStocksWidget();
                   }
                 }
               })
@@ -129,9 +169,6 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
       }
     });
 
-    ItemTouchHelper.Callback callback = new SimpleItemTouchHelperCallback(mCursorAdapter);
-    mItemTouchHelper = new ItemTouchHelper(callback);
-    mItemTouchHelper.attachToRecyclerView(recyclerView);
 
     mTitle = getTitle();
     if (isConnected){
@@ -160,6 +197,7 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
   public void onResume() {
     super.onResume();
     getLoaderManager().restartLoader(CURSOR_LOADER_ID, null, this);
+      emptyViewBehavior();
   }
 
   public void networkToast(){
@@ -201,26 +239,120 @@ public class MyStocksActivity extends AppCompatActivity implements LoaderManager
     return super.onOptionsItemSelected(item);
   }
 
+    /**
+     * If any widget is added on the homescreen, this helper method helps in updating it's content from here.
+     */
+    private void updateStocksWidget(){
+        AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(mContext.getApplicationContext());
+        int[] ids = appWidgetManager.getAppWidgetIds(new ComponentName(this, StockWidgetProvider.class));
+        if(ids.length > 0) {
+            /**
+             * notifyAppWidgetViewDataChanged() method will call the onDataSetChanged method of the
+             */
+            appWidgetManager.notifyAppWidgetViewDataChanged(ids, R.id.lv_stock_widget_layout);
+        }
+    }
+
+
   @Override
   public Loader<Cursor> onCreateLoader(int id, Bundle args){
     // This narrows the return to only the stocks that are most current.
     return new CursorLoader(this, QuoteProvider.Quotes.CONTENT_URI,
-        new String[]{ QuoteColumns._ID, QuoteColumns.SYMBOL, QuoteColumns.BIDPRICE,
-            QuoteColumns.PERCENT_CHANGE, QuoteColumns.CHANGE, QuoteColumns.ISUP},
-        QuoteColumns.ISCURRENT + " = ?",
-        new String[]{"1"},
-        null);
+        new String[]{QuoteColumns._ID, QuoteColumns.SYMBOL, QuoteColumns.BIDPRICE,
+                QuoteColumns.PERCENT_CHANGE, QuoteColumns.CHANGE, QuoteColumns.ISUP,QuoteColumns.NAME,QuoteColumns.CURRENCY,
+                QuoteColumns.LASTTRADEDATE,QuoteColumns.DAYLOW,QuoteColumns.DAYHIGH,QuoteColumns.YEARLOW,QuoteColumns.YEARHIGH,
+                QuoteColumns.EARNINGSSHARE,QuoteColumns.MARKETCAPITALIZATION},
+            QuoteColumns.ISCURRENT + " = ?",
+            new String[]{"1"},
+            null);
   }
 
   @Override
   public void onLoadFinished(Loader<Cursor> loader, Cursor data){
     mCursorAdapter.swapCursor(data);
     mCursor = data;
+      emptyViewBehavior();
   }
+
 
   @Override
   public void onLoaderReset(Loader<Cursor> loader){
     mCursorAdapter.swapCursor(null);
+      emptyViewBehavior();
   }
+
+
+    public void emptyViewBehavior() {
+
+        if (mCursorAdapter.getItemCount()<=0) {
+            //The data is not available
+            String message = getString(R.string.data_not_available);
+
+            SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(mContext);
+            int stockStatus = sp.getInt(getString(R.string.stockStatus), -1);
+
+            //String message = getString(R.string.data_not_available);
+
+            switch (stockStatus) {
+                case StockTaskService.STATUS_OK:
+                    message += getString(R.string.string_status_ok);
+                    break;
+
+                case StockTaskService.STATUS_NO_NETWORK:
+                    message += getString(R.string.string_status_no_network);
+                    break;
+
+                case StockTaskService.STATUS_ERROR_JSON:
+                    message += getString(R.string.string_error_json);
+                    break;
+
+                case StockTaskService.STATUS_SERVER_DOWN:
+                    message += getString(R.string.string_server_down);
+                    break;
+
+                case StockTaskService.STATUS_SERVER_ERROR:
+                    message += getString(R.string.string_error_server);
+                    break;
+
+                case StockTaskService.STATUS_UNKNOWN:
+                    message += getString(R.string.string_status_unknown);
+                    break;
+                default:
+                    break;
+
+            }
+
+
+            emptyText.setText(message);
+           recyclerView.setVisibility(View.INVISIBLE);
+           emptyText.setVisibility(View.VISIBLE);
+        }
+        else {
+            //the data is available
+            recyclerView.setVisibility(View.VISIBLE);
+            emptyText.setVisibility(View.INVISIBLE);
+            symbolColumnIndex = mCursor.getColumnIndex(QuoteColumns.SYMBOL);
+            nameColoumIndex = mCursor.getColumnIndex(QuoteColumns.NAME);
+            currencyColoumIndex = mCursor.getColumnIndex(QuoteColumns.CURRENCY);
+            lasttradedateColoumIndex = mCursor.getColumnIndex(QuoteColumns.LASTTRADEDATE);
+            daylowColoumIndex = mCursor.getColumnIndex(QuoteColumns.DAYLOW);
+            dayhighColoumIndex = mCursor.getColumnIndex(QuoteColumns.DAYHIGH);
+            yearlowColoumIndex = mCursor.getColumnIndex(QuoteColumns.YEARLOW);
+            yearhighColoumIndex = mCursor.getColumnIndex(QuoteColumns.YEARHIGH);
+            earningsshareColoumIndex = mCursor.getColumnIndex(QuoteColumns.EARNINGSSHARE);
+            marketcaptalizationColoumIndex = mCursor.getColumnIndex(QuoteColumns.MARKETCAPITALIZATION);
+        }
+    }
+/*
+    @Override
+    protected void onDestroy() {
+
+        if(mCursor != null)
+            //mCursor.close();
+
+        super.onDestroy();
+    }
+*/
+
 
 }

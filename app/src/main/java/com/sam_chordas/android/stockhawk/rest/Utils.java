@@ -18,33 +18,42 @@ public class Utils {
 
   public static boolean showPercent = true;
 
-  public static ArrayList quoteJsonToContentVals(String JSON){
+
+  public static ArrayList<ContentProviderOperation> quoteJsonToContentVals(String JSON) throws JSONException {
     ArrayList<ContentProviderOperation> batchOperations = new ArrayList<>();
     JSONObject jsonObject = null;
     JSONArray resultsArray = null;
-    try{
-      jsonObject = new JSONObject(JSON);
-      if (jsonObject != null && jsonObject.length() != 0){
-        jsonObject = jsonObject.getJSONObject("query");
-        int count = Integer.parseInt(jsonObject.getString("count"));
-        if (count == 1){
-          jsonObject = jsonObject.getJSONObject("results")
-              .getJSONObject("quote");
-          batchOperations.add(buildBatchOperation(jsonObject));
-        } else{
-          resultsArray = jsonObject.getJSONObject("results").getJSONArray("quote");
+    ContentProviderOperation cpo = null;
 
-          if (resultsArray != null && resultsArray.length() != 0){
-            for (int i = 0; i < resultsArray.length(); i++){
-              jsonObject = resultsArray.getJSONObject(i);
-              batchOperations.add(buildBatchOperation(jsonObject));
+    jsonObject = new JSONObject(JSON);
+    if (jsonObject != null && jsonObject.length() != 0) {
+      jsonObject = jsonObject.getJSONObject("query");
+      int count = Integer.parseInt(jsonObject.getString("count"));
+      if (count == 1) {
+        jsonObject = jsonObject.getJSONObject("results")
+                .getJSONObject("quote");
+
+        cpo = buildBatchOperation(jsonObject);
+        if (cpo != null) {
+          batchOperations.add(cpo);
+        }
+
+      } else {
+        resultsArray = jsonObject.getJSONObject("results").getJSONArray("quote");
+
+        if (resultsArray != null && resultsArray.length() != 0) {
+          for (int i = 0; i < resultsArray.length(); i++) {
+            jsonObject = resultsArray.getJSONObject(i);
+            cpo = buildBatchOperation(jsonObject);
+            if (cpo != null) {
+              batchOperations.add(cpo);
             }
+
           }
         }
       }
-    } catch (JSONException e){
-      Log.e(LOG_TAG, "String to JSON failed: " + e);
     }
+
     return batchOperations;
   }
 
@@ -70,26 +79,47 @@ public class Utils {
     return change;
   }
 
-  public static ContentProviderOperation buildBatchOperation(JSONObject jsonObject){
+  public static ContentProviderOperation buildBatchOperation(JSONObject jsonObject) throws JSONException{
     ContentProviderOperation.Builder builder = ContentProviderOperation.newInsert(
         QuoteProvider.Quotes.CONTENT_URI);
-    try {
+
+    if (!jsonObject.getString("Change").equals("null") && !jsonObject.getString("Bid").equals("null")) {
       String change = jsonObject.getString("Change");
       builder.withValue(QuoteColumns.SYMBOL, jsonObject.getString("symbol"));
       builder.withValue(QuoteColumns.BIDPRICE, truncateBidPrice(jsonObject.getString("Bid")));
-      builder.withValue(QuoteColumns.PERCENT_CHANGE, truncateChange(
-          jsonObject.getString("ChangeinPercent"), true));
+      builder.withValue(QuoteColumns.PERCENT_CHANGE, truncateChange(jsonObject.getString("ChangeinPercent"), true));
       builder.withValue(QuoteColumns.CHANGE, truncateChange(change, false));
       builder.withValue(QuoteColumns.ISCURRENT, 1);
-      if (change.charAt(0) == '-'){
+      if (change.charAt(0) == '-') {
         builder.withValue(QuoteColumns.ISUP, 0);
-      }else{
+      } else {
         builder.withValue(QuoteColumns.ISUP, 1);
       }
+      builder.withValue(QuoteColumns.NAME, jsonObject.getString("Name"));
+      builder.withValue(QuoteColumns.CURRENCY, jsonObject.getString("Currency"));
+      builder.withValue(QuoteColumns.LASTTRADEDATE, jsonObject.getString("LastTradeDate"));
+      builder.withValue(QuoteColumns.DAYLOW, jsonObject.getString("DaysLow"));
+      builder.withValue(QuoteColumns.DAYHIGH, jsonObject.getString("DaysHigh"));
+      builder.withValue(QuoteColumns.YEARLOW, jsonObject.getString("YearLow"));
+      builder.withValue(QuoteColumns.YEARHIGH, jsonObject.getString("YearHigh"));
+      builder.withValue(QuoteColumns.EARNINGSSHARE, jsonObject.getString("EarningsShare"));
+      builder.withValue(QuoteColumns.MARKETCAPITALIZATION, jsonObject.getString("MarketCapitalization"));
 
-    } catch (JSONException e){
-      e.printStackTrace();
+
+    } else {
+      return null;
     }
     return builder.build();
+  }
+
+
+  public static String convertDate(String inputDate){
+    StringBuilder outputFormattedDate = new StringBuilder();
+    outputFormattedDate.append(inputDate.substring(6))
+            .append("/")
+            .append(inputDate.substring(4,6))
+            .append("/")
+            .append(inputDate.substring(2, 4));
+    return outputFormattedDate.toString();
   }
 }
